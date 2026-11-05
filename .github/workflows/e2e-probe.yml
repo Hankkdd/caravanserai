@@ -1,0 +1,48 @@
+# Throwaway probe: can the Docker-in-Docker e2e rehearsals run on a
+# GitHub-hosted runner, do they pass there, and how long do they take?
+name: E2E DinD Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/e2e-dind-probe]
+
+jobs:
+  rehearsal:
+    name: ${{ matrix.script }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        script:
+          - orphan-cleanup
+          - local-recovery
+          - managed-failover
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Runner capability report
+        run: |
+          echo "nproc=$(nproc)  mem=$(free -g | awk '/^Mem:/{print $2}')GiB"
+          echo "disk=$(df -h / | awk 'NR==2{print $4}') free"
+          docker info --format 'docker={{.ServerVersion}} driver={{.Driver}}'
+          echo "shared root /var/tmp writable: $([ -w /var/tmp ] && echo yes || echo NO)"
+          for c in docker curl go python3; do
+            command -v "$c" >/dev/null && echo "have $c" || echo "MISSING $c"
+          done
+
+      - name: Can we run a privileged DinD container?
+        run: |
+          docker run --rm --privileged docker:dind \
+            sh -c 'dockerd >/tmp/d.log 2>&1 & for i in $(seq 1 30); do docker info >/dev/null 2>&1 && { echo "DinD daemon up after ${i}s"; exit 0; }; sleep 1; done; echo "DinD FAILED"; tail -20 /tmp/d.log; exit 1'
+
+      - name: Rehearsal ${{ matrix.script }}
+        run: |
+          start=$(date +%s)
+          ./scripts/e2e/${{ matrix.script }}.sh
+          echo "::notice::${{ matrix.script }} took $(( $(date +%s) - start ))s"
