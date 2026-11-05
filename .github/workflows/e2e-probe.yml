@@ -36,11 +36,6 @@ jobs:
             command -v "$c" >/dev/null && echo "have $c" || echo "MISSING $c"
           done
 
-      - name: Can we run a privileged DinD container?
-        run: |
-          docker run --rm --privileged docker:dind \
-            sh -c 'dockerd >/tmp/d.log 2>&1 & for i in $(seq 1 30); do docker info >/dev/null 2>&1 && { echo "DinD daemon up after ${i}s"; exit 0; }; sleep 1; done; echo "DinD FAILED"; tail -20 /tmp/d.log; exit 1'
-
       - name: Rehearsal ${{ matrix.script }}
         run: |
           start=$(date +%s)
