@@ -99,6 +99,15 @@ test-integration:
 		&& echo -e "==> $(BLUE)All integration tests passed$(NC)" \
 		|| (echo -e "==> $(RED)Integration tests failed$(NC)" && exit 1)
 
+# The fault proxy's own check. It stands cara-server in with a few lines of
+# Python, so unlike the rehearsals below it needs no Docker and finishes in
+# seconds - cheap enough to run on every push.
+test-faultproxy-smoke:
+	@echo -e ":: $(GREEN)Running fault proxy smoke test (a few seconds)...$(NC)"
+	@./scripts/e2e/faultproxy-smoke.sh \
+		&& echo -e "==> $(BLUE)Fault proxy smoke test passed$(NC)" \
+		|| (echo -e "==> $(RED)Fault proxy smoke test failed$(NC)" && exit 1)
+
 test-orphan-e2e:
 	@echo -e ":: $(GREEN)Running isolated orphan-cleanup rehearsal (about 4 minutes)...$(NC)"
 	@./scripts/e2e/orphan-cleanup.sh \
@@ -219,7 +228,7 @@ install-hooks:
 		&& echo -e "==> $(BLUE)Git hooks installed (using .githooks/)$(NC)" \
 		|| (echo -e "==> $(RED)Failed to configure git hooks$(NC)" && exit 1)
 
-.PHONY: all prepare build package run-server run-agent run-cli test test-integration test-orphan-e2e test-recovery-e2e test-managed-failover-e2e test-pgdiff-e2e schemas
+.PHONY: all prepare build package run-server run-agent run-cli test test-integration test-faultproxy-smoke test-orphan-e2e test-recovery-e2e test-managed-failover-e2e test-pgdiff-e2e schemas
 .PHONY: dev-up dev-down dev-reset dev-server dev-logs install-hooks
 .PHONY: walg-backup walg-restore walg-verify
 .PHONY: build-cara-postgres-image test-cara-postgres-image
