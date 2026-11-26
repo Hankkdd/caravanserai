@@ -1,0 +1,14 @@
+diff --git a/internal/agent/loop.go b/internal/agent/loop.go
+index d1f66e5..e242ab7 100644
+--- a/internal/agent/loop.go
++++ b/internal/agent/loop.go
+@@ -382,9 +382,6 @@ func reconcileProjects(ctx context.Context, client *Client, runtime docker.Runti
+ 		// Unknown ownership never counts toward destructive cleanup. Preserve
+ 		// already-stopped state, but require a fresh full grace period after the
+ 		// server becomes reachable again.
+-		if orphans != nil {
+-			orphans.resetGrace()
+-		}
+ 		logger.Warn("Failed to list projects for reconcile", zap.Error(err))
+ 		return
+ 	}

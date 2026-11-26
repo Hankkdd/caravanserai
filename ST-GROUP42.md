@@ -60,6 +60,61 @@ make test-faultproxy-smoke
 go test -race -count=20 ./test/injection/...
 ```
 
+### 變異測試 PoC：既有測試對一條安全規則的盲區（2026-11-26）
+
+目的：在投入框架之前，先證明「既有測試漏掉、而我們抓得到」的缺陷真的存在。方法是變異測試——
+故意植入一個小缺陷，看哪一層測試會發現。
+
+**cara 本身沒有這個缺陷。** 量的是測試套件的敏感度：如果有人改掉這行保護，現有測試會不會發現。
+
+受測規則：所有權未知時不得開始清理。`internal/agent/loop.go:381-390` 在
+`ListProjectsAssignedToNode` 失敗時做兩件事——重算刪除寬限期（`resetGrace()`），然後
+`return` 放棄這一輪。
+
+| 變異體 | 內容 | 補丁 |
+|---|---|---|
+| M1 | 刪掉 `return`：把「問不到」當成「什麼都不擁有」 | `test/injection/mutations/m1-error-treated-as-empty.patch` |
+| M2 | 刪掉 `resetGrace()`：失聯後不重算寬限期 | `test/injection/mutations/m2-missing-reset-grace.patch` |
+
+結果（開發機，基準 `2c88557` + `51c8b15`）：
+
+| 測試層 | 規模 | 耗時 | M1 | M2 |
+|---|---|---|---|---|
+| `make test` | 28 個套件 | 8 秒 | 漏抓 | **抓到** |
+| `make test-integration` | 319 個測試，0 跳過 | 49 秒 | 漏抓 | 未跑 |
+| `scripts/e2e/orphan-cleanup.sh` | 326 行 | 230 秒 | 漏抓（腳本印出 PASS） | 未跑 |
+| `internal/agent/poc_gap_test.go` | 1 個斷言測試 | 0.009 秒 | **抓到** | — |
+
+M2 是被既有的 `TestReconcileProjects_ServerErrorResetsDeletionGrace` 抓到的。所以結論不是
+「cara 沒測這條規則」，而是：**這條保護有兩半，測試套件守住了「寬限期要重算」，沒有守住
+「根本不准動手」。**
+
+M1 是真的安全違規，不是無害的改動：套用 M1 後 `poc_gap_test.go` 失敗並回報
+`Should be empty, but was [default/poc-target]`——agent 在無法確認所有權時停掉了容器。
+乾淨的 cara 上同一支測試通過，所以它不會誤報。
+
+`orphan-cleanup.sh` 漏抓的原因：它用 SQL 直接改 `nodeRef` 來製造所有權轉移，agent 的查詢
+隨後**成功**並回答「不是你的了」。整支腳本只走查詢成功的路徑，查詢失敗那條路在真實多行程
+環境中從未被執行過。
+
+範圍限制：
+
+- 一個存活變異體只是一個資料點。
+- 只跑了 `orphan-cleanup.sh`。它是唯一會執行到這段程式碼的端對端腳本；其他四支未跑。
+- `poc_gap_test.go` 必須放在 `internal/agent/`，因為 `reconcileProjects` 未匯出。它是測試檔，
+  不改變產品行為。
+
+重現（補丁一律套上→跑→還原，提交的產品碼不變）：
+
+```bash
+git apply test/injection/mutations/m1-error-treated-as-empty.patch
+make test                    # 預期通過 = 漏抓
+make test-integration        # 預期通過 = 漏抓（需要 Docker）
+./scripts/e2e/orphan-cleanup.sh   # 預期通過 = 漏抓（需要 Docker，約 4 分鐘）
+go test -run TestPoC_OwnershipUnknownMustNotTouchContainers ./internal/agent/   # 預期失敗 = 抓到
+git checkout -- internal/agent/loop.go
+```
+
 ## 已驗證的環境事實
 
 ### 既有 E2E 腳本

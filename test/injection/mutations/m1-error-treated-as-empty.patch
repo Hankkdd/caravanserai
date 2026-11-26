@@ -1,0 +1,12 @@
+diff --git a/internal/agent/loop.go b/internal/agent/loop.go
+index d1f66e5..0e25c59 100644
+--- a/internal/agent/loop.go
++++ b/internal/agent/loop.go
+@@ -386,7 +386,6 @@ func reconcileProjects(ctx context.Context, client *Client, runtime docker.Runti
+ 			orphans.resetGrace()
+ 		}
+ 		logger.Warn("Failed to list projects for reconcile", zap.Error(err))
+-		return
+ 	}
+ 
+ 	busy := coordinatorOf(backups)
