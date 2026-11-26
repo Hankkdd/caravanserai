@@ -1,0 +1,13 @@
+diff --git a/internal/server/controller/project_rescheduler.go b/internal/server/controller/project_rescheduler.go
+index 11eda80..c4280b2 100644
+--- a/internal/server/controller/project_rescheduler.go
++++ b/internal/server/controller/project_rescheduler.go
+@@ -441,7 +441,7 @@ func (c *ProjectReschedulerController) handleTerminating(
+ 	}
+ 
+ 	elapsed := c.clock.Since(terminatingAt)
+-	if elapsed < c.terminatingTimeout {
++	if elapsed <= c.terminatingTimeout {
+ 		remaining := c.terminatingTimeout - elapsed
+ 		log.Info("Terminating project waiting for timeout",
+ 			zap.Duration("elapsed", elapsed),

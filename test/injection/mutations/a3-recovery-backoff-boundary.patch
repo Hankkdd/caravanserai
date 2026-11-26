@@ -1,0 +1,13 @@
+diff --git a/internal/agent/recovery.go b/internal/agent/recovery.go
+index c31e61d..c322249 100644
+--- a/internal/agent/recovery.go
++++ b/internal/agent/recovery.go
+@@ -156,7 +156,7 @@ func (t *recoveryTracker) next(key recoveryKey) recoveryDecision {
+ 		return recoveryWait
+ 	}
+ 
+-	if elapsed < recoveryBackoff[e.attempts-1] {
++	if elapsed <= recoveryBackoff[e.attempts-1] {
+ 		return recoveryWait
+ 	}
+ 

@@ -1,0 +1,13 @@
+diff --git a/internal/server/controller/node_health.go b/internal/server/controller/node_health.go
+index 34ad74d..a5b3e53 100644
+--- a/internal/server/controller/node_health.go
++++ b/internal/server/controller/node_health.go
+@@ -122,7 +122,7 @@ func (c *NodeHealthController) Reconcile(ctx context.Context, name string) (Resu
+ 		// The store layer now publishes TopicNodeUpdated when the phase
+ 		// actually changes, so an explicit publish here is unnecessary.
+ 
+-	case age <= NodeHeartbeatTimeout && snap.State == v1.NodeStateNotReady:
++	case age < NodeHeartbeatTimeout && snap.State == v1.NodeStateNotReady:
+ 		log.Info("Node heartbeat recovered, marking Ready",
+ 			zap.Duration("age", age),
+ 		)

@@ -1,0 +1,13 @@
+diff --git a/internal/server/controller/project_rescheduler.go b/internal/server/controller/project_rescheduler.go
+index 11eda80..ce7c869 100644
+--- a/internal/server/controller/project_rescheduler.go
++++ b/internal/server/controller/project_rescheduler.go
+@@ -508,7 +508,7 @@ func (c *ProjectReschedulerController) handleRunning(
+ 	}
+ 
+ 	elapsed := c.clock.Since(notReadyAt)
+-	if elapsed < c.runningGrace {
++	if elapsed <= c.runningGrace {
+ 		remaining := c.runningGrace - elapsed
+ 		log.Info("Running project waiting for grace period",
+ 			zap.Duration("elapsed", elapsed),

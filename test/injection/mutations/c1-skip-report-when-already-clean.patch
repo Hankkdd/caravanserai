@@ -1,0 +1,14 @@
+diff --git a/internal/agent/cleanup.go b/internal/agent/cleanup.go
+index 21b6719..de3ee2c 100644
+--- a/internal/agent/cleanup.go
++++ b/internal/agent/cleanup.go
+@@ -210,6 +210,9 @@ func runCleanupTask(ctx context.Context, server cleanupServer, cleaner *assignme
+ 
+ 	// Removing and confirming run even when ResourcesRemoved is already on
+ 	// record: local data may move only once no container can still be using it.
++	if before, err := cleaner.remaining(ctx, a); err == nil && len(before) == 0 {
++		return
++	}
+ 	if err := cleaner.removeAll(ctx, a); err != nil {
+ 		log.Warn("Cleanup incomplete, will retry next poll", zap.Error(err))
+ 		return

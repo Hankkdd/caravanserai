@@ -1,0 +1,13 @@
+diff --git a/internal/agent/recovery.go b/internal/agent/recovery.go
+index c31e61d..2c5f9b9 100644
+--- a/internal/agent/recovery.go
++++ b/internal/agent/recovery.go
+@@ -150,7 +150,7 @@ func (t *recoveryTracker) next(key recoveryKey) recoveryDecision {
+ 	elapsed := t.clock.Since(e.lastAttemptAt)
+ 
+ 	if e.attempts >= maxRecoveryAttempts {
+-		if elapsed >= recoveryVerifyTimeout {
++		if elapsed > recoveryVerifyTimeout {
+ 			return recoveryExhausted
+ 		}
+ 		return recoveryWait

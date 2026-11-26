@@ -1,0 +1,13 @@
+diff --git a/internal/agent/recovery.go b/internal/agent/recovery.go
+index c31e61d..02e929d 100644
+--- a/internal/agent/recovery.go
++++ b/internal/agent/recovery.go
+@@ -209,7 +209,7 @@ func (t *recoveryTracker) observeTransient(key recoveryKey) (stuck bool) {
+ 		t.transientSince[key] = t.clock.Now()
+ 		return false
+ 	}
+-	return t.clock.Since(since) >= transientObservationTimeout
++	return t.clock.Since(since) > transientObservationTimeout
+ }
+ 
+ // clearTransient forgets that the Project was restarting. Called whenever it

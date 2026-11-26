@@ -1,0 +1,14 @@
+diff --git a/internal/agent/restore/quarantine.go b/internal/agent/restore/quarantine.go
+index 03961be..f9c4da8 100644
+--- a/internal/agent/restore/quarantine.go
++++ b/internal/agent/restore/quarantine.go
+@@ -37,9 +37,6 @@ func Quarantine(dataRoot string, owner Provenance, now time.Time) error {
+ 		return err
+ 	}
+ 	if _, err := os.Stat(dir); err != nil {
+-		if os.IsNotExist(err) {
+-			return nil
+-		}
+ 		return fmt.Errorf("restore: inspect %q: %w", dir, err)
+ 	}
+ 

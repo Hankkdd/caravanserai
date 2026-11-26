@@ -1,0 +1,22 @@
+diff --git a/internal/store/postgres/store.go b/internal/store/postgres/store.go
+index 76901d6..b5c9ca6 100644
+--- a/internal/store/postgres/store.go
++++ b/internal/store/postgres/store.go
+@@ -702,7 +702,7 @@ func (s *Store) finalizeProject(
+ 	// A no-op once Commit has succeeded.
+ 	defer func() { _ = tx.Rollback(ctx) }()
+ 
+-	project, err := readProject(ctx, tx, name, "FOR UPDATE")
++	project, err := readProject(ctx, tx, name, "")
+ 	if err != nil {
+ 		if errors.Is(err, store.ErrNotFound) {
+ 			return fmt.Errorf("%w: project %q", store.ErrNotFound, name)
+@@ -1674,7 +1674,7 @@ func (s *Store) changeSpec(ctx context.Context, name string, change func(current
+ 	// A no-op once Commit has succeeded.
+ 	defer func() { _ = tx.Rollback(ctx) }()
+ 
+-	current, err := readProject(ctx, tx, name, "FOR UPDATE")
++	current, err := readProject(ctx, tx, name, "")
+ 	if err != nil {
+ 		if errors.Is(err, store.ErrNotFound) {
+ 			return nil, fmt.Errorf("%w: project %q", store.ErrNotFound, name)

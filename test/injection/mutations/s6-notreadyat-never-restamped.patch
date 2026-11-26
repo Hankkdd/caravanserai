@@ -1,0 +1,13 @@
+diff --git a/internal/server/adapter/project.go b/internal/server/adapter/project.go
+index e21dfad..eca7262 100644
+--- a/internal/server/adapter/project.go
++++ b/internal/server/adapter/project.go
+@@ -346,7 +346,7 @@ func holdsAssignment(status *v1.ProjectStatus, p *controller.ProjectSnapshot) bo
+ func stampedSince(conditions []v1.Condition, t v1.ConditionType, since time.Time) bool {
+ 	for _, c := range conditions {
+ 		if c.Type == t {
+-			return !c.LastTransitionTime.Before(since)
++			return true
+ 		}
+ 	}
+ 	return false

@@ -1,0 +1,13 @@
+diff --git a/internal/server/controller/node_health.go b/internal/server/controller/node_health.go
+index 34ad74d..225886a 100644
+--- a/internal/server/controller/node_health.go
++++ b/internal/server/controller/node_health.go
+@@ -108,7 +108,7 @@ func (c *NodeHealthController) Reconcile(ctx context.Context, name string) (Resu
+ 		log.Debug("Node is draining, skipping health check")
+ 		return Result{}, nil
+ 
+-	case age > NodeHeartbeatTimeout && snap.State != v1.NodeStateNotReady:
++	case age >= NodeHeartbeatTimeout && snap.State != v1.NodeStateNotReady:
+ 		log.Info("Node heartbeat timed out, marking NotReady",
+ 			zap.Duration("age", age),
+ 			zap.Duration("timeout", NodeHeartbeatTimeout),

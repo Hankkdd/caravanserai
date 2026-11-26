@@ -1,0 +1,13 @@
+diff --git a/internal/store/postgres/store.go b/internal/store/postgres/store.go
+index 76901d6..b959c11 100644
+--- a/internal/store/postgres/store.go
++++ b/internal/store/postgres/store.go
+@@ -853,7 +853,7 @@ func (s *Store) ClearProjectCondition(ctx context.Context, name string, conditio
+ // after its own leading parameters.
+ const assignmentFenceWHERE = ` AND uid = $%d` +
+ 	` AND COALESCE(status->>'nodeRef', '') = $%d` +
+-	` AND COALESCE((status->>'assignmentGeneration')::bigint, 0) = $%d`
++	` AND $%d::bigint IS NOT NULL`
+ 
+ // fenceMatches reports whether p's current ownership equals the fence ref.
+ // It is the Go-side mirror of assignmentFenceWHERE, used only to explain a

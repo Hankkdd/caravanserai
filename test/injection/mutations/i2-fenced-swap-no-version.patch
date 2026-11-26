@@ -1,0 +1,13 @@
+diff --git a/internal/store/postgres/store.go b/internal/store/postgres/store.go
+index 76901d6..4202654 100644
+--- a/internal/store/postgres/store.go
++++ b/internal/store/postgres/store.go
+@@ -959,7 +959,7 @@ func (s *Store) swapProjectStatusFenced(
+ 	query := `
+ 		UPDATE resources
+ 		SET phase = $1, status = $2, updated_at = $3, resource_version = resource_version + 1
+-		WHERE kind = $4 AND namespace = $5 AND name = $6 AND resource_version = $7` +
++		WHERE kind = $4 AND namespace = $5 AND name = $6 AND $7::bigint IS NOT NULL` +
+ 		fmt.Sprintf(assignmentFenceWHERE, 8, 9, 10)
+ 
+ 	tag, err := s.pool.Exec(ctx, query,

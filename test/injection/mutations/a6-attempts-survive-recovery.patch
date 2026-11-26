@@ -1,0 +1,13 @@
+diff --git a/internal/agent/recovery.go b/internal/agent/recovery.go
+index c31e61d..7228d59 100644
+--- a/internal/agent/recovery.go
++++ b/internal/agent/recovery.go
+@@ -190,7 +190,7 @@ func (t *recoveryTracker) next(key recoveryKey) recoveryDecision {
+ func (t *recoveryTracker) observeHealthy(key recoveryKey) {
+ 	t.mu.Lock()
+ 	defer t.mu.Unlock()
+-	delete(t.entries, key)
++	_ = key
+ }
+ 
+ // observeTransient records that the Project has a container restarting, and

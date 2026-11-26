@@ -1,0 +1,13 @@
+diff --git a/internal/server/controller/project_rescheduler.go b/internal/server/controller/project_rescheduler.go
+index 11eda80..ce168d6 100644
+--- a/internal/server/controller/project_rescheduler.go
++++ b/internal/server/controller/project_rescheduler.go
+@@ -393,7 +393,7 @@ func incidentClock(
+ 		if cond.Type != t {
+ 			continue
+ 		}
+-		return cond.LastTransitionTime, !cond.LastTransitionTime.Before(lastHeartbeat)
++		return cond.LastTransitionTime, !cond.LastTransitionTime.IsZero()
+ 	}
+ 	return time.Time{}, false
+ }

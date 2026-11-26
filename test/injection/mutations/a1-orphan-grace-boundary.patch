@@ -1,0 +1,22 @@
+diff --git a/internal/agent/orphan.go b/internal/agent/orphan.go
+index 09e7ccc..b850a35 100644
+--- a/internal/agent/orphan.go
++++ b/internal/agent/orphan.go
+@@ -105,7 +105,7 @@ func (t *orphanTracker) observe(
+ 			t.states[project] = state
+ 			continue
+ 		}
+-		if t.clock.Since(state.lostSince) >= orphanGracePeriod {
++		if t.clock.Since(state.lostSince) > orphanGracePeriod {
+ 			observation.toRemove = append(observation.toRemove, project)
+ 		}
+ 	}
+@@ -134,7 +134,7 @@ func (t *orphanTracker) observe(
+ 			t.states[project] = state
+ 			continue
+ 		}
+-		if t.clock.Since(state.lostSince) >= orphanGracePeriod {
++		if t.clock.Since(state.lostSince) > orphanGracePeriod {
+ 			observation.toRemove = append(observation.toRemove, project)
+ 		}
+ 	}
