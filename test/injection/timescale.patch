@@ -1,0 +1,349 @@
+diff --git a/internal/agent/loop.go b/internal/agent/loop.go
+index d1f66e5..5b22e83 100644
+--- a/internal/agent/loop.go
++++ b/internal/agent/loop.go
+@@ -17,6 +17,8 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/agent/restore"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // errSecretKeyNotFound is returned by resolveSecrets when a referenced Secret
+@@ -158,7 +160,7 @@ type RunConfig struct {
+ // defaultPollInterval is the reconcile cadence. Tier-1 recovery backoffs are
+ // minimum delays evaluated on this cadence, so a 5s backoff takes effect on
+ // the first poll after it expires — in practice, 10s.
+-const defaultPollInterval = 10 * time.Second
++var defaultPollInterval = timescale.D(10 * time.Second)
+ 
+ // Run registers the node with the control-plane and then runs two concurrent
+ // loops until ctx is cancelled:
+@@ -307,9 +309,9 @@ func heartbeatNetworkStatus(client *Client, agentPort int, advertiseIP string) v
+ // It starts at 5s and doubles up to a 60s cap. Returns nil on success or a
+ // non-nil error only when ctx is cancelled.
+ func reRegister(ctx context.Context, client *Client, spec v1.NodeSpec, logger *zap.Logger) error {
+-	const (
+-		initialBackoff = 5 * time.Second
+-		maxBackoff     = 60 * time.Second
++	var (
++		initialBackoff = timescale.D(5 * time.Second)
++		maxBackoff     = timescale.D(60 * time.Second)
+ 	)
+ 	backoff := initialBackoff
+ 
+diff --git a/internal/agent/orphan.go b/internal/agent/orphan.go
+index 09e7ccc..3104195 100644
+--- a/internal/agent/orphan.go
++++ b/internal/agent/orphan.go
+@@ -9,6 +9,8 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/agent/docker"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // orphanGracePeriod is how long a project must stay absent from the server's
+@@ -20,7 +22,7 @@ import (
+ // value is deliberately far longer than the 10s poll interval: the sweep is
+ // destructive and irreversible for Ephemeral data, so it waits until a project's
+ // absence is a settled fact rather than a single observation.
+-const orphanGracePeriod = 3 * time.Minute
++var orphanGracePeriod = timescale.D(3 * time.Minute)
+ 
+ // clock abstracts time so the grace period can be tested without sleeping.
+ // It mirrors controller.Clock rather than importing it, keeping the agent free
+diff --git a/internal/agent/recovery.go b/internal/agent/recovery.go
+index c31e61d..13020fb 100644
+--- a/internal/agent/recovery.go
++++ b/internal/agent/recovery.go
+@@ -5,22 +5,24 @@ import (
+ 	"time"
+ 
+ 	v1 "NYCU-SDC/caravanserai/api/v1"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // Tier-1 recovery bounds. These are fixed for 1.0; no manifest field exposes
+ // them until real operational measurements justify a policy surface.
+-const (
+-	// maxRecoveryAttempts is how many times the agent restarts a Project's
+-	// containers before giving up and reporting LocalRestartExhausted.
+-	maxRecoveryAttempts = 3
++// maxRecoveryAttempts is how many times the agent restarts a Project's
++// containers before giving up and reporting LocalRestartExhausted.
++const maxRecoveryAttempts = 3
+ 
++var (
+ 	// recoveryVerifyTimeout is how long after the final attempt the agent waits
+ 	// for the containers to come up before declaring exhaustion. Earlier
+ 	// attempts do not need it: an attempt that has not produced a healthy
+ 	// Project by the time its backoff expires has already failed, and the next
+ 	// attempt supersedes it. Like the backoffs it is a minimum, evaluated on
+ 	// the next poll after it expires.
+-	recoveryVerifyTimeout = 30 * time.Second
++	recoveryVerifyTimeout = timescale.D(30 * time.Second)
+ 
+ 	// transientObservationTimeout bounds how long a Project may sit with a
+ 	// container in Docker's "restarting" state before it is reported Failed.
+@@ -28,7 +30,7 @@ const (
+ 	// something is running `docker restart` and should settle within a poll or
+ 	// two. One that does not settle is stuck, and without this bound the
+ 	// Project would read Running indefinitely while it serves nothing.
+-	transientObservationTimeout = 30 * time.Second
++	transientObservationTimeout = timescale.D(30 * time.Second)
+ )
+ 
+ // recoveryBackoff is the minimum delay before attempts 2 and 3, indexed by
+@@ -45,8 +47,8 @@ const (
+ // poll after its backoff has expired: with the 10s poll, 5s and 10s both
+ // take effect roughly 10s after the attempt before them.
+ var recoveryBackoff = [maxRecoveryAttempts - 1]time.Duration{
+-	5 * time.Second,
+-	10 * time.Second,
++	timescale.D(5 * time.Second),
++	timescale.D(10 * time.Second),
+ }
+ 
+ // recoveryKey identifies one assignment of one Project.
+diff --git a/internal/config/agentconfig.go b/internal/config/agentconfig.go
+index f638434..524c7f1 100644
+--- a/internal/config/agentconfig.go
++++ b/internal/config/agentconfig.go
+@@ -8,6 +8,8 @@ import (
+ 	configutil "github.com/NYCU-SDC/summer/pkg/config"
+ 	"github.com/joho/godotenv"
+ 	"gopkg.in/yaml.v3"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // secretFileMaxMode is the most permissive mode allowed for a config file that
+@@ -176,7 +178,7 @@ func LoadAgent() (AgentConfig, *LogBuffer) {
+ 		Debug:             false,
+ 		ServerURL:         "http://localhost:8080",
+ 		NodeName:          hostname,
+-		HeartbeatInterval: 30 * time.Second,
++		HeartbeatInterval: timescale.D(30 * time.Second),
+ 		DockerHost:        "unix:///var/run/docker.sock",
+ 		ListenPort:        "9090",
+ 		ProxyListenAddr:   ":8081",
+diff --git a/internal/server/controller/failed_project_rescheduler.go b/internal/server/controller/failed_project_rescheduler.go
+index b58bba3..b59058a 100644
+--- a/internal/server/controller/failed_project_rescheduler.go
++++ b/internal/server/controller/failed_project_rescheduler.go
+@@ -12,6 +12,8 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/store"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // rescheduleBackoff is how long a Project must have been Failed before it is
+@@ -41,7 +43,7 @@ const rescheduleStableAfter = 3 * time.Hour
+ // failedReschedulerResyncInterval is how often the Seed loop re-enqueues the
+ // Projects this controller watches, as a fallback for dropped events and for
+ // the clocks no event announces.
+-const failedReschedulerResyncInterval = 30 * time.Second
++var failedReschedulerResyncInterval = timescale.D(30 * time.Second)
+ 
+ // rescheduleReasons are the Failed reasons worth moving a Project for: the
+ // ones a different Node can fix, or may. Everything else is left Failed.
+diff --git a/internal/server/controller/manager.go b/internal/server/controller/manager.go
+index b0e0a1e..1464f98 100644
+--- a/internal/server/controller/manager.go
++++ b/internal/server/controller/manager.go
+@@ -7,20 +7,22 @@ import (
+ 	"time"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+-const (
++var (
+ 	// defaultWorkers is the number of parallel reconcile goroutines per
+ 	// controller when none is specified.
+ 	defaultWorkers = 1
+ 
+ 	// defaultRequeueAfter is the delay before re-enqueuing a key when
+ 	// Result.Requeue is true.
+-	defaultRequeueAfter = 10 * time.Second
++	defaultRequeueAfter = timescale.D(10 * time.Second)
+ 
+ 	// defaultErrorBackoff is the delay applied after a failed Reconcile call
+ 	// before the same key is retried.
+-	defaultErrorBackoff = 5 * time.Second
++	defaultErrorBackoff = timescale.D(5 * time.Second)
+ )
+ 
+ // registration bundles a Controller with its runtime configuration.
+diff --git a/internal/server/controller/node_health.go b/internal/server/controller/node_health.go
+index 34ad74d..5f0aa24 100644
+--- a/internal/server/controller/node_health.go
++++ b/internal/server/controller/node_health.go
+@@ -10,18 +10,20 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/store"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+-const (
++var (
+ 	// NodeHeartbeatTimeout is the maximum age of a Node's LastHeartbeat before
+ 	// it is considered unhealthy.  The Agent is expected to post a heartbeat
+ 	// roughly every 30 s; three missed beats triggers NotReady.
+-	NodeHeartbeatTimeout = 90 * time.Second
++	NodeHeartbeatTimeout = timescale.D(90 * time.Second)
+ 
+ 	// nodeSeedInterval is how often the Seed loop re-enqueues all known Nodes
+ 	// for a health check.  It should be shorter than NodeHeartbeatTimeout so
+ 	// that stale nodes are detected promptly.
+-	nodeSeedInterval = 30 * time.Second
++	nodeSeedInterval = timescale.D(30 * time.Second)
+ )
+ 
+ // NodeStore is the subset of the Store interface that NodeHealthController
+diff --git a/internal/server/controller/project_rescheduler.go b/internal/server/controller/project_rescheduler.go
+index 11eda80..0d1996b 100644
+--- a/internal/server/controller/project_rescheduler.go
++++ b/internal/server/controller/project_rescheduler.go
+@@ -10,26 +10,28 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/store"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+-const (
++var (
+ 	// terminatingTimeout is the default for how long a Terminating Project's
+ 	// node may stay NotReady before the rescheduler marks the Project
+ 	// TerminationBlocked (see WithTerminatingTimeout). Expiry never finalizes
+ 	// the Project: only its node can confirm that the resources are gone, and
+ 	// the record has to outlive them.
+-	terminatingTimeout = 10 * time.Minute
++	terminatingTimeout = timescale.D(10 * time.Minute)
+ 
+ 	// reschedulerResyncInterval is how often the Seed loop re-enqueues all
+ 	// NotReady nodes as a fallback in case an event was dropped.
+-	reschedulerResyncInterval = 30 * time.Second
++	reschedulerResyncInterval = timescale.D(30 * time.Second)
+ 
+ 	// runningGracePeriod is the maximum time a Running project on a NotReady
+ 	// node is allowed before the rescheduler tries to release it.  This gives
+ 	// transient network issues time to resolve before the project is moved to
+ 	// another node, avoiding unnecessary churn and split-brain risk for
+ 	// stateful workloads.  Set to 3× the 90-second heartbeat timeout.
+-	runningGracePeriod = 3 * time.Minute
++	runningGracePeriod = timescale.D(3 * time.Minute)
+ )
+ 
+ // ProjectSnapshot is the minimal view of a Project needed by
+diff --git a/internal/server/controller/project_scheduler.go b/internal/server/controller/project_scheduler.go
+index 072d25a..6ffca7c 100644
+--- a/internal/server/controller/project_scheduler.go
++++ b/internal/server/controller/project_scheduler.go
+@@ -11,11 +11,13 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/store"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // projectResyncInterval is how often the Seed loop re-enqueues all Pending
+ // projects as a fallback in case an event was dropped.
+-const projectResyncInterval = 30 * time.Second
++var projectResyncInterval = timescale.D(30 * time.Second)
+ 
+ // SchedulerProjectStore is the store surface needed by
+ // ProjectSchedulerController.
+diff --git a/internal/server/controller/project_termination.go b/internal/server/controller/project_termination.go
+index 0072b87..5cad8ca 100644
+--- a/internal/server/controller/project_termination.go
++++ b/internal/server/controller/project_termination.go
+@@ -10,11 +10,13 @@ import (
+ 	"NYCU-SDC/caravanserai/internal/store"
+ 
+ 	"go.uber.org/zap"
++
++	"NYCU-SDC/caravanserai/internal/timescale"
+ )
+ 
+ // terminationResyncInterval is how often the Seed loop re-enqueues all
+ // Terminated projects as a fallback in case an event was dropped.
+-const terminationResyncInterval = 30 * time.Second
++var terminationResyncInterval = timescale.D(30 * time.Second)
+ 
+ // TerminationProjectStore is the store surface needed by
+ // ProjectTerminationController.
+diff --git a/internal/server/handler/node/handler.go b/internal/server/handler/node/handler.go
+index 6766099..5d85ca5 100644
+--- a/internal/server/handler/node/handler.go
++++ b/internal/server/handler/node/handler.go
+@@ -54,7 +54,7 @@ type ProjectLister interface {
+ // overlayOfflineThreshold is the heartbeat age beyond which a Node is reported
+ // Offline. It reuses the same window the NodeHealthController uses to mark a
+ // Node NotReady, so State and OverlayStatus never disagree.
+-const overlayOfflineThreshold = controller.NodeHeartbeatTimeout
++var overlayOfflineThreshold = controller.NodeHeartbeatTimeout
+ 
+ // computeOverlayStatus derives a Node's overlay reachability from heartbeat
+ // freshness. It is a pure function so the tri-state logic stays unit-testable:
+diff --git a/internal/timescale/timescale.go b/internal/timescale/timescale.go
+new file mode 100644
+index 0000000..ce96517
+--- /dev/null
++++ b/internal/timescale/timescale.go
+@@ -0,0 +1,42 @@
++// Package timescale shrinks cara's liveness, failover, cleanup and recovery
++// deadlines by one factor, so end-to-end tests that wait on them finish
++// sooner. It exists only in test builds: the course project applies it as a
++// patch when it builds the binaries, and the committed product code never
++// contains it.
++//
++// CARA_TIME_SCALE is a factor in (0, 1]. Unset, unparsable or out of range
++// means 1, which leaves every deadline as shipped. Every scaled deadline is
++// multiplied by the same factor, so their order is kept: the heartbeat
++// interval stays below the heartbeat timeout, which stays below the running
++// grace period, and so on. Scaling only some of them would test a system
++// that does not exist.
++package timescale
++
++import (
++	"fmt"
++	"os"
++	"strconv"
++	"time"
++)
++
++var factor = load()
++
++func load() float64 {
++	raw := os.Getenv("CARA_TIME_SCALE")
++	if raw == "" {
++		return 1
++	}
++	f, err := strconv.ParseFloat(raw, 64)
++	if err != nil || f <= 0 || f > 1 {
++		fmt.Fprintf(os.Stderr, "timescale: ignoring CARA_TIME_SCALE=%q, using 1\n", raw)
++		return 1
++	}
++	fmt.Fprintf(os.Stderr, "timescale: deadlines scaled by %g\n", f)
++	return f
++}
++
++// D scales one deadline.
++func D(d time.Duration) time.Duration { return time.Duration(float64(d) * factor) }
++
++// Factor reports the factor in use.
++func Factor() float64 { return factor }

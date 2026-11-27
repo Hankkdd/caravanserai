@@ -389,6 +389,31 @@ func TestProxy_TimesStopsInjectingAfterTheLimit(t *testing.T) {
 	wantKinds(t, proxy.Events(), httpfault.KindMatched, httpfault.KindForwarded)
 }
 
+// A server that answers 200 with a payload the agent cannot read is a different
+// fault from one that answers 500, and the agent takes a different path for it,
+// so a rule must be able to answer that way on every request, without holding.
+func TestProxy_RuleCanAnswerWithAMalformedBody(t *testing.T) {
+	proxy, front, reached := newProxy(t)
+
+	rule := ownershipRule("truncated")
+	rule.Respond = httpfault.RespondStatus
+	rule.Status = http.StatusOK
+	rule.Body = `{"items":[`
+	if err := proxy.AddRule(rule); err != nil {
+		t.Fatalf("AddRule: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		status, body := get(t, front.URL, ownershipQuery)
+		if status != http.StatusOK || body != `{"items":[` {
+			t.Errorf("request %d = %d %q, want 200 with the rule's body", i, status, body)
+		}
+	}
+	if reached.Load() != 0 {
+		t.Errorf("upstream saw %d requests, want 0", reached.Load())
+	}
+}
+
 // A scenario must be able to tell "the fault landed" from "nothing happened",
 // so both of these report failure rather than succeeding quietly.
 func TestProxy_WaitAndReleaseReportWhenNothingHappened(t *testing.T) {

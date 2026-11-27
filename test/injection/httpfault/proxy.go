@@ -95,6 +95,9 @@ type Rule struct {
 	Respond Respond `json:"respond,omitempty"`
 	// Status is the code RespondStatus answers with.
 	Status int `json:"status,omitempty"`
+	// Body is what RespondStatus answers with. Empty means a short text naming
+	// the rule. Set it with Status 200 to answer with a malformed payload.
+	Body string `json:"body,omitempty"`
 	// Delay waits this long before acting. On a held request the wait runs
 	// after the release.
 	Delay Duration `json:"delay,omitempty"`
@@ -387,7 +390,7 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
 			Kind: KindMatched, RuleID: rule.ID,
 			Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery,
 		})
-		p.finish(w, r, rule.ID, Release{Respond: rule.Respond, Status: rule.Status}, time.Duration(rule.Delay))
+		p.finish(w, r, rule.ID, Release{Respond: rule.Respond, Status: rule.Status, Body: rule.Body}, time.Duration(rule.Delay))
 		return
 	}
 
@@ -419,6 +422,7 @@ func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {
 		if how.Respond == "" {
 			how.Respond = rule.Respond
 			how.Status = rule.Status
+			how.Body = rule.Body
 		}
 		if order.silent {
 			// Answer so the caller is not left hanging, but log nothing and

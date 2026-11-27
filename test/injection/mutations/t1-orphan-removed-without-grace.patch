@@ -1,0 +1,11 @@
+--- a/internal/agent/orphan.go	2026-11-27 23:00:36.597253419 +0800
++++ b/internal/agent/orphan.go	2026-11-27 23:00:36.605742700 +0800
+@@ -105,7 +105,7 @@
+ 			t.states[project] = state
+ 			continue
+ 		}
+-		if t.clock.Since(state.lostSince) >= orphanGracePeriod {
++		if true {
+ 			observation.toRemove = append(observation.toRemove, project)
+ 		}
+ 	}
