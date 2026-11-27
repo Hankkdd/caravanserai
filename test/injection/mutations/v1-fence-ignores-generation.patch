@@ -1,0 +1,14 @@
+diff --git a/internal/agent/loop.go b/internal/agent/loop.go
+index d1f66e5..753a0f8 100644
+--- a/internal/agent/loop.go
++++ b/internal/agent/loop.go
+@@ -1302,9 +1302,6 @@ func checkRecoveryFence(observed, current *v1.Project, nodeName string) error {
+ 			observed.Namespace, observed.Name, current.Namespace, current.Name)
+ 	case current.UID != observed.UID:
+ 		return fmt.Errorf("project UID changed from %q to %q", observed.UID, current.UID)
+-	case current.Status.AssignmentGeneration != observed.Status.AssignmentGeneration:
+-		return fmt.Errorf("assignment generation changed from %d to %d",
+-			observed.Status.AssignmentGeneration, current.Status.AssignmentGeneration)
+ 	case current.Status.NodeRef != nodeName:
+ 		return fmt.Errorf("project is assigned to node %q, not this node %q",
+ 			current.Status.NodeRef, nodeName)

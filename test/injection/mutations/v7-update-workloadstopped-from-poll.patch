@@ -1,0 +1,13 @@
+diff --git a/internal/agent/spec_update.go b/internal/agent/spec_update.go
+index d6248cc..11781cb 100644
+--- a/internal/agent/spec_update.go
++++ b/internal/agent/spec_update.go
+@@ -163,7 +163,7 @@ func applySpecUpdate(ctx context.Context, client *Client, runtime docker.Runtime
+ 		return true, false
+ 	}
+ 	identity := v1.AssignmentIdentity{ProjectUID: current.UID, NodeName: current.Status.NodeRef, AssignmentGeneration: current.Status.AssignmentGeneration}
+-	if current.Status.Recovery.WorkloadStoppedFor(identity) {
++	if p.Status.Recovery.WorkloadStoppedFor(identity) {
+ 		log.Info("This assignment reported its workload stopped; not starting containers for an update")
+ 		return true, false
+ 	}

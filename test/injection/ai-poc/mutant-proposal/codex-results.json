@@ -1,0 +1,108 @@
+{
+  "go_version": "go1.26.5 linux/arm64",
+  "unit_command": "go test ./... -count=1",
+  "integration_command": "go test -tags e2e ./test/integration/... ./internal/store/postgres/... -count=1",
+  "integration_limitation": "Docker socket /var/run/docker.sock is unavailable; infrastructure failures are untested, not killed mutants.",
+  "original_files_unchanged": true,
+  "original_file_count": 373,
+  "mutants": [
+    {
+      "id": "grace-config",
+      "rule": "R1",
+      "file": "cmd/cara-server/main.go",
+      "description": "The server enables grace-expired release even when configuration disables it.",
+      "unit_exit_code": 0,
+      "unit_seconds": 4.59,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.48,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "termination-config",
+      "rule": "R5",
+      "file": "cmd/cara-server/main.go",
+      "description": "When the running grace period is configured shorter than the termination timeout, the server uses it for termination and reports TerminationBlocked early.",
+      "unit_exit_code": 0,
+      "unit_seconds": 4.72,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.52,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "preflight-budget",
+      "rule": "R4",
+      "file": "internal/agent/loop.go",
+      "description": "Unexpected preflight errors consume restart attempts even though no recovery action runs.",
+      "unit_exit_code": 0,
+      "unit_seconds": 5.47,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.75,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "snapshot-decode",
+      "rule": "R8",
+      "file": "internal/agent/client.go",
+      "description": "An undecodable ownership snapshot is treated as an empty successful result, allowing orphan cleanup to stop owned containers.",
+      "unit_exit_code": 0,
+      "unit_seconds": 5.53,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.75,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "fenced-conflict",
+      "rule": "R7",
+      "file": "internal/store/postgres/store.go",
+      "description": "A fenced status write reports success on a version conflict without retrying or committing its change.",
+      "unit_exit_code": 0,
+      "unit_seconds": 5.17,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.84,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "fenced-cas",
+      "rule": "R2",
+      "file": "internal/store/postgres/store.go",
+      "description": "A report can overwrite a recreated same-name Project if its resource version matches, because the atomic assignment fence is lost.",
+      "unit_exit_code": 0,
+      "unit_seconds": 5.04,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.84,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "cleanup-last-kind",
+      "rule": "R9",
+      "file": "internal/agent/cleanup.go",
+      "description": "The last cleanup resource kind hides resources retained by earlier kinds, allowing false ResourcesRemoved evidence and premature deletion.",
+      "unit_exit_code": 0,
+      "unit_seconds": 5.51,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.75,
+      "survived_integration": "untested"
+    },
+    {
+      "id": "apply-clears-stop",
+      "rule": "R3",
+      "file": "internal/store/postgres/store.go",
+      "description": "Applying a spec clears the durable WorkloadStopped latch without creating a new assignment, allowing the same assignment to restart containers.",
+      "unit_exit_code": 0,
+      "unit_seconds": 5.08,
+      "survived_unit": "yes",
+      "integration_exit_code": 1,
+      "integration_seconds": 0.85,
+      "survived_integration": "untested"
+    }
+  ],
+  "all_patches_apply_cleanly": true,
+  "no_test_files_modified": true
+}

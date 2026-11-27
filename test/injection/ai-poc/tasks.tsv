@@ -1,0 +1,13 @@
+m1-error-treated-as-empty	1319286c-f83a-45c8-8f25-fc6f43f4e53d	internal/agent/ownership_list_error_ai_test.go
+c1-skip-report-when-already-clean	b47c097e-5657-4ebe-8556-3524af67819c	internal/agent/cleanup_already_clean_ai_test.go
+i2-fenced-swap-no-version	1467c74b-2889-4146-a600-3fdecfb927e8	internal/store/postgres/fenced_status_occ_ai_test.go
+i3-uid-swap-no-version	4241a9fc-564e-4978-9283-57cd7292545f	internal/store/postgres/uid_status_occ_ai_test.go
+mutant-proposal-run1	21aa88ba-1d69-4238-9260-68bb5351dbb1	test/injection/mutations/ai-*.patch
+ai-apply-clears-stop	1d0855df-054c-46b4-b74d-46ef594cc893	internal/store/postgres/apply_preserves_stop_ai_test.go
+ai-cleanup-last-kind	0ae73df2-e271-4a83-81c7-de918d127854	internal/agent/cleanup_remaining_ai_test.go
+ai-fenced-cas	61465153-58ca-48be-a65c-08ea184611c9	internal/store/postgres/fenced_status_recreate_ai_test.go
+ai-fenced-conflict	cd1b0a98-15e1-47fb-a724-b78f26cb0616	internal/store/postgres/fenced_conflict_ai_test.go
+ai-grace-config	2b0a230b-e34a-4e4d-a53a-6571c5a9b463	cmd/cara-server/grace_config_ai_test.go
+ai-preflight-budget	38baec1b-f5d0-4b7f-95da-924493042a64	internal/agent/preflight_budget_ai_test.go
+ai-snapshot-decode	62214d5f-ff29-4f27-b8e5-bc2f2c73519c	internal/agent/client_snapshot_decode_ai_test.go
+ai-termination-config	223c36ad-bb1f-4a0d-8c24-5872e458929e	cmd/cara-server/termination_config_ai_test.go

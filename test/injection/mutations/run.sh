@@ -4,7 +4,7 @@
 # including on Ctrl-C, so the committed tree is never left mutated.
 #
 # Usage: test/injection/mutations/run.sh [--integration] [patch ...]
-#   --integration  also run make test-integration (needs Docker, ~50s) for
+#   --integration  also run make test-integration plus e2e tests under cmd/ (needs Docker, ~50s) for
 #                  mutants that survive the unit suite
 #   no patches     every *.patch in this directory
 set -uo pipefail
@@ -36,7 +36,7 @@ for patch in "${patches[@]}"; do
 
 	integ=-
 	if [[ $unit == survived && $integration -eq 1 ]]; then
-		if go test -count=1 -tags e2e -timeout 300s ./test/integration/... ./internal/store/postgres/... >/dev/null 2>&1; then
+		if go test -count=1 -tags e2e -timeout 300s ./test/integration/... ./internal/store/postgres/... ./cmd/... >/dev/null 2>&1; then
 			integ=survived
 		else
 			integ=killed

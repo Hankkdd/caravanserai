@@ -1,0 +1,36 @@
+package agent
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestRecoveryPreflightErrorsPreserveRestartBudget(t *testing.T) {
+	p := gateProject()
+	h := newIncidentHarness(t)
+	h.states = webContainer("exited", 1)
+	h.runtime.preflightErr = errors.New("docker daemon temporarily unavailable")
+
+	// Failed checks never reach the restart operation, even across enough
+	// polls to exhaust a budget if they were incorrectly counted as attempts.
+	for i := 0; i < maxRecoveryAttempts; i++ {
+		h.poll(t, p)
+	}
+	h.clock.advance(recoveryVerifyTimeout)
+	require.Equal(t, maxRecoveryAttempts, h.runtime.preflights)
+	require.Zero(t, h.runtime.recoveries)
+	require.Empty(t, h.server.updates)
+
+	// Once Docker answers again, the unresolved incident still has its full
+	// restart budget. Keep observing the exited container so no healthy
+	// observation can reset the budget and conceal incorrect accounting.
+	h.runtime.preflightErr = nil
+	for attempt := 1; attempt <= maxRecoveryAttempts; attempt++ {
+		h.poll(t, p)
+		require.Empty(t, h.server.updates, "preflight errors must not cause premature exhaustion")
+		require.Equal(t, attempt, h.runtime.recoveries,
+			"restart %d must remain available after transient preflight errors", attempt)
+	}
+}

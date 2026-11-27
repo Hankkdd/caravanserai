@@ -1,0 +1,22 @@
+package agent
+
+import (
+	"context"
+	"testing"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+)
+
+func TestCleanupTaskReportsResourcesRemovedWhenAlreadyClean(t *testing.T) {
+	server, resource := newCleanupCase()
+	// Resources may already be gone even though the server still needs evidence.
+	resource.held = nil
+
+	runCleanupTasks(context.Background(), server, newAssignmentCleaner(resource), nil, zap.NewNop())
+
+	assert.Equal(t, []v1.AssignmentIdentity{owedAssignment}, server.reported,
+		"an outstanding cleanup obligation must be reported even when no local resources remain")
+}

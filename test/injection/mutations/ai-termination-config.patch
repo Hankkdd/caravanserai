@@ -1,0 +1,11 @@
+--- a/cmd/cara-server/main.go
++++ b/cmd/cara-server/main.go
+@@ -239,7 +239,7 @@
+ 		projectAdapter,
+ 		nodeAdapter,
+ 		eventBus,
+-		controller.WithTerminatingTimeout(cfg.TerminatingTimeout),
++		controller.WithTerminatingTimeout(cfg.RunningGracePeriod),
+ 		controller.WithRunningGracePeriod(cfg.RunningGracePeriod),
+ 	))
+ 	ctrlManager.Add(controller.NewFailedProjectReschedulerController(logger,

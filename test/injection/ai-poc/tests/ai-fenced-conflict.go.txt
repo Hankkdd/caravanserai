@@ -1,0 +1,88 @@
+//go:build e2e
+
+package postgres_test
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"testing"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+	"NYCU-SDC/caravanserai/internal/store"
+	pgstore "NYCU-SDC/caravanserai/internal/store/postgres"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestReportProjectStatusFencedVersionConflict(t *testing.T) {
+	ctx := context.Background()
+	var s *pgstore.Store
+	// Allow an explicitly supplied test database in environments without Docker.
+	// Otherwise use the existing disposable PostgreSQL fixture.
+	if databaseURL := os.Getenv("CARAVANSERAI_TEST_DATABASE_URL"); databaseURL != "" {
+		var err error
+		s, err = pgstore.New(ctx, databaseURL, zap.NewNop(), nil)
+		require.NoError(t, err)
+		t.Cleanup(s.Close)
+	} else {
+		s, _ = newE2EStore(t)
+	}
+
+	for _, tc := range []struct {
+		name          string
+		conflictEvery bool
+		wantMutations int
+		wantPhase     v1.ProjectPhase
+		wantWrites    int64
+	}{
+		{"retry-commits-on-fresh-status", false, 2, v1.ProjectPhaseFailed, 2},
+		{"exhausted-retries-return-conflict", true, 3, v1.ProjectPhaseRunning, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			name := "fenced-conflict-" + tc.name
+			p := createRunning(t, s, name, "node-a", 1)
+			t.Cleanup(func() { require.NoError(t, s.DeleteProject(ctx, name)) })
+			ref := store.AssignmentRef{UID: p.UID, NodeRef: p.Status.NodeRef, Generation: p.Status.AssignmentGeneration}
+			mutations := 0
+			lastReason := ""
+
+			err := s.ReportProjectStatusFenced(ctx, name, ref, func(status *v1.ProjectStatus) error {
+				mutations++
+				if mutations == 1 || tc.conflictEvery {
+					// This commits after the report's snapshot read and before its
+					// swap, forcing a version conflict without timing or goroutines.
+					lastReason = fmt.Sprintf("ConcurrentWrite%d", mutations)
+					require.NoError(t, s.PatchProjectCondition(ctx, name, v1.Condition{
+						Type:   v1.ConditionTypeMaintenance,
+						Status: v1.ConditionTrue,
+						Reason: lastReason,
+					}))
+				}
+				status.Phase = v1.ProjectPhaseFailed
+				return nil
+			})
+
+			if tc.conflictEvery {
+				assert.ErrorIs(t, err, store.ErrVersionConflict, "an uncommitted report must not return success")
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, tc.wantMutations, mutations)
+			after, err := s.GetProject(ctx, name)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantPhase, after.Status.Phase)
+			assert.Equal(t, p.ResourceVersion+tc.wantWrites, after.ResourceVersion)
+			assert.Equal(t, p.UID, after.UID)
+			assert.Equal(t, ref.NodeRef, after.Status.NodeRef)
+			assert.Equal(t, ref.Generation, after.Status.AssignmentGeneration)
+			assert.Contains(t, after.Status.Conditions, v1.Condition{
+				Type:   v1.ConditionTypeMaintenance,
+				Status: v1.ConditionTrue,
+				Reason: lastReason,
+			}, "a retry must preserve the other writer's condition")
+		})
+	}
+}

@@ -1,0 +1,13 @@
+diff --git a/internal/agent/loop.go b/internal/agent/loop.go
+index d1f66e5..ed27841 100644
+--- a/internal/agent/loop.go
++++ b/internal/agent/loop.go
+@@ -1143,7 +1143,7 @@ func recoverLocally(
+ 
+ 	// The copy healthCheckOne checked was the stale one. A backup that began
+ 	// since then is visible only here.
+-	if v1.IsMaintenanceActive(current.Status.Conditions, time.Now()) {
++	if v1.IsMaintenanceActive(p.Status.Conditions, time.Now()) {
+ 		log.Info("Project entered maintenance before recovery could run, skipping",
+ 			zap.String("detail", detail))
+ 		return

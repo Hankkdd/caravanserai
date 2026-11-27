@@ -1,0 +1,40 @@
+package agent
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestListProjectsAssignedToNodeRejectsInvalidSnapshot(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "empty response", body: ""},
+		{name: "truncated JSON", body: `{"items":[{"metadata":{"name":"owned-project"}}`},
+		{name: "invalid items type", body: `{"items":"not-a-project-list"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			t.Cleanup(server.Close)
+
+			client := NewClient(zap.NewNop(), server.URL, "node-a")
+			projects, err := client.ListProjectsAssignedToNode(context.Background())
+
+			require.Error(t, err, "an unreadable ownership snapshot must not be accepted as a successful poll")
+			require.Nil(t, projects, "an unreadable ownership snapshot must not return project data")
+		})
+	}
+}

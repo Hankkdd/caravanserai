@@ -1,0 +1,71 @@
+package agent
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"NYCU-SDC/caravanserai/internal/agent/docker"
+
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
+)
+
+func TestReconcileProjects_UnknownOwnershipPreservesLocalWorkloads(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		status      int
+		body        string
+		wantStopped bool
+	}{
+		{
+			name:   "server unavailable",
+			status: http.StatusServiceUnavailable,
+			body:   `{"error":"temporarily unavailable"}`,
+		},
+		{
+			name:   "invalid ownership response",
+			status: http.StatusOK,
+			body:   `{"items":`,
+		},
+		{
+			name:        "confirmed empty ownership",
+			status:      http.StatusOK,
+			body:        `{"items":[]}`,
+			wantStopped: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /api/v1/projects", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			})
+			server := httptest.NewServer(mux)
+			t.Cleanup(server.Close)
+			client := NewClient(zap.NewNop(), server.URL, "test-node")
+
+			local := identityUID("default", "running-app", "app-uid")
+			runtime, record := newSweepFixture(local)
+			routes := &recordingRoutes{}
+			tracker := newOrphanTracker(&fakeClock{now: time.Unix(1700000000, 0)})
+
+			reconcileProjects(context.Background(), client, runtime, routes, nil, tracker, nil, nil, zap.NewNop())
+
+			if tc.wantStopped {
+				assert.Equal(t, []docker.ProjectIdentity{local}, record.stopped,
+					"a successful empty snapshot confirms ownership loss")
+				assert.Equal(t, []string{local.Name}, routes.removedNames())
+			} else {
+				assert.Empty(t, record.stopped,
+					"unknown ownership must not stop local workloads")
+				assert.Empty(t, routes.removedNames(),
+					"unknown ownership must preserve serving routes")
+			}
+			assert.Empty(t, record.removed, "local resources must not be deleted on this tick")
+		})
+	}
+}

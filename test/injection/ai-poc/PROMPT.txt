@@ -1,0 +1,38 @@
+You are working in a folder that contains the source of Caravanserai, a small
+container orchestrator written in Go (module NYCU-SDC/caravanserai). It has a
+server (cara-server), a per-node agent (cara-agent) and a PostgreSQL store.
+
+The file `mutant.patch` in the folder root is a small deliberate change to the
+product code. We call the patched program a "mutant". The current test suite
+of this repository does NOT detect it: every existing test still passes when
+the patch is applied.
+
+YOUR TASK
+Write exactly one new Go test file that
+  1. passes on the unmodified code, and
+  2. fails when mutant.patch is applied.
+
+RULES
+- Do not modify, rename or delete any existing file. Only add your one new file.
+  Its name must end in `_ai_test.go`. Put it in whichever package suits it.
+- Test observable behaviour through the code's own functions, types and test
+  helpers. Do not read source files at test time, do not parse or grep code,
+  and do not reference mutant.patch from the test.
+- The test must be deterministic: it must give the same result every run.
+- You may reuse helpers from existing _test.go files in the same package.
+- Tests whose file starts with `//go:build e2e` need Docker (they start a
+  PostgreSQL container) and run with `-tags e2e`. Use that only if your test
+  needs a real database.
+
+HOW TO CHECK YOUR WORK (please actually run these)
+  go test ./<package>/ -run <YourTest> -count=1            # must PASS
+  patch -p1 < mutant.patch
+  go test ./<package>/ -run <YourTest> -count=1            # must FAIL
+  patch -R -p1 < mutant.patch                              # restore the code
+Always restore the code afterwards, even if something goes wrong.
+
+When you are done, end your reply with exactly these lines:
+TEST_FILE: <path of your new file, relative to the folder root>
+RUN: <the go test command, including -tags e2e if needed>
+VERIFIED: <yes if you saw it pass on original and fail on mutant, otherwise no>
+BEHAVIOUR: <one sentence: what correct behaviour your test asserts>

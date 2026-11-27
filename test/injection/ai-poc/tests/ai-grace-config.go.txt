@@ -1,0 +1,161 @@
+//go:build e2e
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+	pgstore "NYCU-SDC/caravanserai/internal/store/postgres"
+	"NYCU-SDC/caravanserai/test/integration/testhelper"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestServerGraceExpiredReleaseDisabled(t *testing.T) {
+	// Run the real entry point in a child so its flags, signals and global
+	// telemetry state cannot interfere with the parent test process.
+	if os.Getenv("CARA_GRACE_CONFIG_CHILD") == "1" {
+		os.Args = []string{"cara-server"}
+		main()
+		return
+	}
+
+	databaseURL := graceConfigDatabaseURLAI(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	s, err := pgstore.New(ctx, databaseURL, zap.NewNop(), nil)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+
+	const nodeName = "grace-config-lost-node"
+	// Both timestamps are well in the past, with the outage clock after the
+	// last heartbeat. No timer needs to expire while this test is running.
+	heartbeat := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, s.CreateNode(ctx, &v1.Node{
+		ObjectMeta: v1.ObjectMeta{Name: nodeName},
+		Spec:       v1.NodeSpec{Hostname: nodeName},
+		Status: v1.NodeStatus{
+			State:         v1.NodeStateNotReady,
+			LastHeartbeat: heartbeat,
+		},
+	}))
+	p := &v1.Project{
+		ObjectMeta: v1.ObjectMeta{Name: "grace-config-project"},
+		Spec: v1.ProjectSpec{
+			Services: []v1.ServiceDef{{Name: "web", Image: "nginx:alpine"}},
+			Overlap:  v1.OverlapAllow,
+		},
+		Status: v1.ProjectStatus{
+			Phase:                v1.ProjectPhaseRunning,
+			NodeRef:              nodeName,
+			AssignmentGeneration: 1,
+			AssignmentHistory:    v1.AssignmentHistoryKnown,
+			Conditions: []v1.Condition{{
+				Type:               v1.ConditionTypeNotReadyAt,
+				Status:             v1.ConditionTrue,
+				LastTransitionTime: heartbeat.Add(time.Hour),
+			}},
+		},
+	}
+	require.NoError(t, s.CreateProject(ctx, p))
+
+	workDir := t.TempDir()
+	configPath := filepath.Join(workDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("{}\n"), 0600))
+	testBinary, err := os.Executable()
+	require.NoError(t, err)
+	child := exec.CommandContext(ctx, testBinary, "-test.run=^TestServerGraceExpiredReleaseDisabled$")
+	child.Dir = workDir // Isolate config.Load from the repository's .env file.
+	child.Env = []string{
+		"CARA_GRACE_CONFIG_CHILD=1",
+		"CARA_CONFIG=" + configPath,
+		"DATABASE_URL=" + databaseURL,
+		"GRACE_EXPIRED_RELEASE=false",
+		"RUNNING_GRACE_PERIOD=1s",
+		"HOST=127.0.0.1",
+		"PORT=0",
+	}
+	var output bytes.Buffer
+	child.Stdout = &output
+	child.Stderr = &output
+	require.NoError(t, child.Start())
+	t.Cleanup(func() {
+		_ = child.Process.Signal(os.Interrupt)
+		assert.NoError(t, child.Wait(), "server output:\n%s", output.String())
+	})
+
+	var observed *v1.Project
+	var takeover *v1.Condition
+	// Wait for an actual release decision, rather than treating an unchanged
+	// assignment as success before the controller has had a chance to run.
+	require.Eventually(t, func() bool {
+		observed, err = s.GetProject(ctx, p.Name)
+		if err != nil {
+			return false
+		}
+		for i := range observed.Status.Conditions {
+			c := &observed.Status.Conditions[i]
+			if c.Type == v1.ConditionTypeTakeoverRequired && c.Status == v1.ConditionTrue {
+				takeover = c
+				return true
+			}
+		}
+		return observed.Status.Phase != v1.ProjectPhaseRunning || observed.Status.NodeRef != nodeName
+	}, 10*time.Second, 20*time.Millisecond, "server must process the expired outage")
+
+	assert.Equal(t, v1.ProjectPhaseRunning, observed.Status.Phase,
+		"disabling grace-expired release must keep the project running on its original assignment")
+	assert.Equal(t, nodeName, observed.Status.NodeRef)
+	assert.Equal(t, int64(1), observed.Status.AssignmentGeneration)
+	require.NotNil(t, takeover, "without stop evidence, the server must require an authorized takeover")
+	assert.Equal(t, "WorkloadStopUnconfirmed", takeover.Reason)
+	assert.Empty(t, observed.Status.Recovery.NodesOwingCleanup(), "the assignment must not have been released")
+}
+
+func graceConfigDatabaseURLAI(t *testing.T) string {
+	t.Helper()
+	// Docker is the default, as in the existing integration suite. An optional
+	// PostgreSQL admin URL supports environments without Docker; it is used
+	// only to create and drop a fresh database owned by this test.
+	adminURL := os.Getenv("CARA_TEST_DATABASE_URL")
+	if adminURL == "" {
+		_, databaseURL, cleanup, err := testhelper.StartPostgres()
+		require.NoError(t, err)
+		t.Cleanup(cleanup)
+		return databaseURL
+	}
+
+	u, err := url.Parse(adminURL)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	admin, err := pgxpool.New(ctx, adminURL)
+	require.NoError(t, err)
+	t.Cleanup(admin.Close)
+	name := "cara_grace_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	identifier := pgx.Identifier{name}.Sanitize()
+	_, err = admin.Exec(ctx, "CREATE DATABASE "+identifier)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, err := admin.Exec(cleanupCtx, "DROP DATABASE "+identifier+" WITH (FORCE)")
+		assert.NoError(t, err)
+	})
+	u.Path = "/" + name
+	return u.String()
+}

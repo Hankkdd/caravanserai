@@ -1,0 +1,11 @@
+--- a/internal/store/postgres/store.go
++++ b/internal/store/postgres/store.go
+@@ -925,7 +925,7 @@
+ 			return nil
+ 		}
+ 
+-		err = s.swapProjectStatusFenced(ctx, name, project.ObjectMeta.ResourceVersion, ref, next)
++		err = s.swapProjectStatus(ctx, name, project.ObjectMeta.ResourceVersion, next)
+ 		switch {
+ 		case err == nil:
+ 			s.publish(event.TopicProjectUpdated, name)

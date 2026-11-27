@@ -1,0 +1,66 @@
+//go:build e2e
+
+package postgres_test
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+	pgstore "NYCU-SDC/caravanserai/internal/store/postgres"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestUIDStatusUpdatePreservesConcurrentWrite(t *testing.T) {
+	ctx := context.Background()
+	var s *pgstore.Store
+	// A supplied test database also supports environments without Docker.
+	// Otherwise, reuse the package's disposable PostgreSQL container helper.
+	if databaseURL := os.Getenv("CARA_TEST_DATABASE_URL"); databaseURL != "" {
+		var err error
+		s, err = pgstore.New(ctx, databaseURL, zap.NewNop(), nil)
+		require.NoError(t, err)
+		t.Cleanup(s.Close)
+	} else {
+		s, _ = newE2EStore(t)
+	}
+
+	p := createPending(t, s, "uid-occ-"+uuid.NewString())
+	t.Cleanup(func() {
+		require.NoError(t, s.DeleteProject(ctx, p.Name))
+	})
+
+	mutations := 0
+	err := s.UpdateProjectStatusForUID(ctx, p.Name, p.ObjectMeta.UID, func(st *v1.ProjectStatus) error {
+		mutations++
+		if mutations == 1 {
+			// Commit another writer's change after the UID update read its
+			// snapshot, but before it tries to swap that snapshot into the row.
+			// Synchronous calls make the conflict independent of scheduling.
+			if err := s.UpdateProjectStatusWithRetry(ctx, p.Name, func(other *v1.ProjectStatus) error {
+				other.NodeRef = "concurrently-assigned-node"
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		st.Phase = v1.ProjectPhaseRunning
+		return nil
+	})
+	require.NoError(t, err)
+
+	after, err := s.GetProject(ctx, p.Name)
+	require.NoError(t, err)
+	assert.Equal(t, p.ObjectMeta.UID, after.ObjectMeta.UID)
+	assert.Equal(t, "concurrently-assigned-node", after.Status.NodeRef,
+		"the UID-pinned update must preserve the other writer's committed status")
+	assert.Equal(t, v1.ProjectPhaseRunning, after.Status.Phase)
+	assert.Equal(t, 2, mutations, "a stale version must trigger a fresh read and mutation")
+	assert.Equal(t, p.ObjectMeta.ResourceVersion+2, after.ObjectMeta.ResourceVersion,
+		"only the two successful writes should advance the version")
+}

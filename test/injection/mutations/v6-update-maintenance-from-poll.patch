@@ -1,0 +1,13 @@
+diff --git a/internal/agent/spec_update.go b/internal/agent/spec_update.go
+index d6248cc..bf328b7 100644
+--- a/internal/agent/spec_update.go
++++ b/internal/agent/spec_update.go
+@@ -158,7 +158,7 @@ func applySpecUpdate(ctx context.Context, client *Client, runtime docker.Runtime
+ 		log.Info("Project changed before the update could run, skipping", zap.Error(err))
+ 		return true, false
+ 	}
+-	if v1.IsMaintenanceActive(current.Status.Conditions, time.Now()) {
++	if v1.IsMaintenanceActive(p.Status.Conditions, time.Now()) {
+ 		log.Info("Project entered maintenance before the update could run, skipping")
+ 		return true, false
+ 	}

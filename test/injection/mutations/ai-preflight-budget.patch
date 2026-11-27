@@ -1,0 +1,10 @@
+--- a/internal/agent/loop.go
++++ b/internal/agent/loop.go
+@@ -1183,6 +1183,7 @@
+ 			reportRecoveryBlocked(ctx, client, current, recoveryBlockedStaleContainer, staleContainerMessage(err), log)
+ 			return
+ 		}
++		_ = recovery.next(key)
+ 		log.Warn("Recovery preflight failed, skipping this tick",
+ 			zap.Strings("services", names), zap.Error(err))
+ 		return

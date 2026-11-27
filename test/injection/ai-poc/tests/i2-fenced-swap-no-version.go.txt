@@ -1,0 +1,69 @@
+//go:build e2e
+
+package postgres_test
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+	"NYCU-SDC/caravanserai/internal/store"
+	pgstore "NYCU-SDC/caravanserai/internal/store/postgres"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestFencedStatusRetryPreservesConcurrentCondition(t *testing.T) {
+	ctx := context.Background()
+	var s *pgstore.Store
+	// An isolated local database can replace the default disposable Docker database.
+	if databaseURL := os.Getenv("CARAVANSERAI_TEST_DATABASE_URL"); databaseURL != "" {
+		var err error
+		s, err = pgstore.New(ctx, databaseURL, zap.NewNop(), nil)
+		require.NoError(t, err)
+		t.Cleanup(s.Close)
+	} else {
+		s, _ = newE2EStore(t)
+	}
+
+	p := createRunning(t, s, "fenced-occ-preserves-condition", "node-a", 1)
+	t.Cleanup(func() {
+		require.NoError(t, s.DeleteProject(ctx, p.Name))
+	})
+	ref := store.AssignmentRef{
+		UID: p.ObjectMeta.UID, NodeRef: p.Status.NodeRef, Generation: p.Status.AssignmentGeneration,
+	}
+	maintenance := v1.Condition{
+		Type:               v1.ConditionTypeMaintenance,
+		Status:             v1.ConditionTrue,
+		Reason:             "BackingUp",
+		LastTransitionTime: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	mutations := 0
+	err := s.ReportProjectStatusFenced(ctx, p.Name, ref, func(status *v1.ProjectStatus) error {
+		mutations++
+		if mutations == 1 {
+			// Commit after the report reads its snapshot, before it attempts the
+			// swap. Ownership stays the same, but the snapshot is now outdated.
+			require.NoError(t, s.PatchProjectCondition(ctx, p.Name, maintenance))
+		}
+		status.Phase = v1.ProjectPhaseFailed
+		return nil
+	})
+	require.NoError(t, err)
+
+	after, err := s.GetProject(ctx, p.Name)
+	require.NoError(t, err)
+	assert.Equal(t, v1.ProjectPhaseFailed, after.Status.Phase, "the report must commit its own change")
+	assert.Contains(t, after.Status.Conditions, maintenance, "the report must preserve the other writer's committed condition")
+	assert.Equal(t, 2, mutations, "a version conflict must reapply the mutation to a fresh snapshot")
+	assert.Equal(t, p.ObjectMeta.ResourceVersion+2, after.ObjectMeta.ResourceVersion, "only the condition patch and the successful report should advance the version")
+	assert.Equal(t, ref.UID, after.ObjectMeta.UID)
+	assert.Equal(t, ref.NodeRef, after.Status.NodeRef)
+	assert.Equal(t, ref.Generation, after.Status.AssignmentGeneration)
+}

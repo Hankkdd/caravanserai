@@ -1,0 +1,13 @@
+--- a/internal/agent/client.go
++++ b/internal/agent/client.go
+@@ -357,9 +357,7 @@
+ 	}
+ 
+ 	var list v1.ProjectList
+-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+-		return nil, fmt.Errorf("decode project list: %w", err)
+-	}
++	_ = json.NewDecoder(resp.Body).Decode(&list)
+ 
+ 	projects := make([]*v1.Project, len(list.Items))
+ 	for i := range list.Items {

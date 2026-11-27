@@ -1,0 +1,32 @@
+package agent
+
+import (
+	"context"
+	"testing"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestCleanupTaskRetainsEarlierKindUntilRemoved(t *testing.T) {
+	server, containers := newCleanupCase()
+	containers.stuck = true
+	// Proxy routes report no remaining resources, even when an earlier kind
+	// still has a container after a successful removal attempt.
+	cleaner := newAssignmentCleaner(containers, proxyRoutes{})
+
+	runCleanupTasks(context.Background(), server, cleaner, nil, zap.NewNop())
+
+	require.Len(t, containers.removed, 1, "cleanup must attempt container removal")
+	require.NotEmpty(t, containers.held, "the container must still be present")
+	require.Empty(t, server.reported, "an empty later kind must not hide a surviving container")
+
+	containers.stuck = false
+	runCleanupTasks(context.Background(), server, cleaner, nil, zap.NewNop())
+
+	require.Empty(t, containers.held)
+	require.Equal(t, []v1.AssignmentIdentity{server.tasks[0].Assignment}, server.reported,
+		"report cleanup only after all registered kinds are empty")
+}

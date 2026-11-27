@@ -1,0 +1,52 @@
+You are working in a folder that contains the source of Caravanserai, a small
+container orchestrator written in Go (module NYCU-SDC/caravanserai): a server
+(cara-server) that schedules Projects (groups of containers) onto Nodes, a
+per-node agent (cara-agent) that runs them with Docker, and a PostgreSQL store.
+
+The system is meant to uphold these safety rules:
+
+R1 Release authorization: an assignment on a lost Node may be released only
+   when the release conditions hold (grace-expired release enabled, overlap
+   allowed, and Managed volumes have a usable backup, or other valid evidence).
+   Otherwise the assignment is kept and TakeoverRequired is set. A legal
+   release records its reason and the cleanup it obliges.
+R2 Assignment fencing: a write from an old assignment (UID, nodeRef or
+   assignment generation does not match the current one) must be rejected.
+R3 WorkloadStopped: once a workload is reported stopped for an assignment, that
+   same assignment must not start it again, even after the agent restarts. A
+   new assignment may start it.
+R4 Local recovery budget: the agent restarts a failed Project at most 3 times;
+   attempts that did not actually run do not count; it declares exhaustion only
+   after the last attempt's verification deadline.
+R5 Termination timeout: a Terminating Project on a lost Node is not marked
+   TerminationBlocked before the timeout; after it, it is reported, never
+   deleted outright.
+R6 Lost-node clock: if a Node recovers and is lost again, the grace clock starts
+   over; it must not reuse the earlier incident's clock.
+R7 Concurrent updates: conflicting status writes are retried; a write must
+   never silently discard another writer's committed change.
+R8 Unknown ownership: when the agent cannot find out which Projects it owns, it
+   must not stop or delete containers.
+R9 Cleanup evidence: deletion completes only after ResourcesRemoved is
+   confirmed for the assignment.
+
+YOUR TASK
+Find weaknesses in this repository's test suite by mutation. Write 8 mutants:
+each one a small, realistic change to PRODUCT code (not tests) of the kind a
+developer could plausibly make by mistake, which violates one of the rules
+above, and which the existing tests do NOT detect.
+
+RULES
+- Save each mutant as a unified diff in `mutants/<short-id>.patch`, applicable
+  from the folder root with `patch -p1`. One rule violation per mutant; the
+  code must still compile.
+- Do not leave any change applied. After you are done the product code must be
+  identical to how you found it. Do not add or edit test files.
+- Prefer mutants that survive. To check, apply a patch, run
+  `go test ./... -count=1`, and revert with `patch -R -p1`. Integration tests
+  need Docker and run with `go test -tags e2e ./test/integration/...
+  ./internal/store/postgres/... -count=1`; run them if you can.
+- Avoid equivalent mutants (changes that do not change behaviour).
+
+When you are done, end your reply with one line per mutant, exactly:
+MUTANT<TAB><short-id><TAB><rule R1..R9><TAB><survived unit: yes|no|untested><TAB><survived integration: yes|no|untested><TAB><one sentence: what goes wrong>

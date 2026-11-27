@@ -1,0 +1,11 @@
+--- a/internal/store/postgres/store.go
++++ b/internal/store/postgres/store.go
+@@ -931,7 +931,7 @@
+ 			s.publish(event.TopicProjectUpdated, name)
+ 			return nil
+ 		case errors.Is(err, store.ErrVersionConflict):
+-			lastConflict = err
++			return nil
+ 		default:
+ 			return err
+ 		}

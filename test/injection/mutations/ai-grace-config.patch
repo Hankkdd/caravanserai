@@ -1,0 +1,11 @@
+--- a/cmd/cara-server/main.go
++++ b/cmd/cara-server/main.go
+@@ -221,7 +221,7 @@
+ 	// ============================================
+ 
+ 	nodeAdapter := adapter.NewNodeStoreAdapter(pgStore)
+-	projectAdapter := adapter.NewProjectStoreAdapter(pgStore).WithGraceExpiredRelease(cfg.GraceExpiredRelease)
++	projectAdapter := adapter.NewProjectStoreAdapter(pgStore).WithGraceExpiredRelease(true)
+ 
+ 	ctrlManager := controller.NewManager(logger)
+ 

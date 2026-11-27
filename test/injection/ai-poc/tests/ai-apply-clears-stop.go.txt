@@ -1,0 +1,76 @@
+//go:build e2e
+
+package postgres_test
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+	"NYCU-SDC/caravanserai/internal/store"
+	pgstore "NYCU-SDC/caravanserai/internal/store/postgres"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestApplyProjectSpecPreservesWorkloadStopped(t *testing.T) {
+	ctx := context.Background()
+	var s *pgstore.Store
+	if databaseURL := os.Getenv("CARA_TEST_DATABASE_URL"); databaseURL != "" {
+		// A dedicated external test database also permits running without Docker.
+		var err error
+		s, err = pgstore.New(ctx, databaseURL, zap.NewNop(), nil)
+		require.NoError(t, err)
+		t.Cleanup(s.Close)
+	} else {
+		s, _ = newE2EStore(t)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		image string
+	}{
+		{name: "same-spec", image: "nginx:alpine"},
+		{name: "changed-image", image: "nginx:1.28"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := createRunning(t, s, "apply-preserves-stop-"+tc.name, "node-a", 3)
+			t.Cleanup(func() { assert.NoError(t, s.DeleteProject(ctx, p.Name)) })
+			assignment := v1.AssignmentIdentity{
+				ProjectUID:           p.UID,
+				NodeName:             p.Status.NodeRef,
+				AssignmentGeneration: p.Status.AssignmentGeneration,
+			}
+			stoppedAt := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
+			require.NoError(t, s.RecordWorkloadStopped(ctx, p.Name, store.AssignmentRef{
+				UID:        assignment.ProjectUID,
+				NodeRef:    assignment.NodeName,
+				Generation: assignment.AssignmentGeneration,
+			}, stoppedAt))
+			before, err := s.GetProject(ctx, p.Name)
+			require.NoError(t, err)
+			require.True(t, before.Status.Recovery.WorkloadStoppedFor(assignment))
+
+			// Applying a spec does not commit a new assignment. Its stop latch
+			// must survive even when the requested service image changes.
+			next := &v1.Project{ObjectMeta: v1.ObjectMeta{Name: p.Name}, Spec: p.Spec}
+			next.Spec.Services = []v1.ServiceDef{{Name: "web", Image: tc.image}}
+			require.NoError(t, s.UpdateProjectSpec(ctx, next))
+
+			after, err := s.GetProject(ctx, p.Name)
+			require.NoError(t, err)
+			assert.Equal(t, tc.image, after.Spec.Services[0].Image)
+			assert.Equal(t, before.UID, after.UID)
+			assert.Equal(t, before.Status.NodeRef, after.Status.NodeRef)
+			assert.Equal(t, before.Status.AssignmentGeneration, after.Status.AssignmentGeneration)
+			require.True(t, after.Status.Recovery.WorkloadStoppedFor(assignment),
+				"applying a spec must preserve the stop latch for the unchanged assignment")
+			assert.Equal(t, before.Status.Recovery.WorkloadStopped, after.Status.Recovery.WorkloadStopped,
+				"applying a spec must preserve the original stop evidence")
+		})
+	}
+}

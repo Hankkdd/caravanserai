@@ -1,0 +1,159 @@
+//go:build e2e
+
+package main
+
+import (
+	"context"
+	"flag"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"syscall"
+	"testing"
+	"time"
+
+	v1 "NYCU-SDC/caravanserai/api/v1"
+	pgstore "NYCU-SDC/caravanserai/internal/store/postgres"
+	"NYCU-SDC/caravanserai/test/integration/testhelper"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestServerUsesTerminatingTimeout(t *testing.T) {
+	// Re-execute this test binary to exercise the real server entry point,
+	// including its configuration and controller registration.
+	if os.Getenv("CARA_AI_TERMINATION_CHILD") == "1" {
+		flag.CommandLine = flag.NewFlagSet("cara-server", flag.ExitOnError)
+		os.Args = os.Args[:1]
+		main()
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// An explicitly supplied disposable database also permits running this
+	// test where PostgreSQL is available without a Docker daemon.
+	databaseURL := os.Getenv("CARA_TEST_DATABASE_URL")
+	var pool *pgxpool.Pool
+	if databaseURL == "" {
+		var cleanup func()
+		var err error
+		pool, databaseURL, cleanup, err = testhelper.StartPostgres()
+		require.NoError(t, err)
+		t.Cleanup(cleanup)
+	} else {
+		var err error
+		pool, err = pgxpool.New(ctx, databaseURL)
+		require.NoError(t, err)
+		t.Cleanup(pool.Close)
+	}
+
+	s, err := pgstore.New(ctx, databaseURL, zap.NewNop(), nil)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+
+	nodeName := "timeout-node-" + uuid.NewString()
+	projectName := "timeout-project-" + uuid.NewString()
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		_, err := pool.Exec(cleanupCtx,
+			"DELETE FROM resources WHERE (kind = 'Project' AND name = $1) OR (kind = 'Node' AND name = $2)",
+			projectName, nodeName)
+		require.NoError(t, err)
+	})
+
+	now := time.Now().UTC()
+	require.NoError(t, s.CreateNode(ctx, &v1.Node{
+		ObjectMeta: v1.ObjectMeta{Name: nodeName},
+		Status: v1.NodeStatus{
+			State:         v1.NodeStateNotReady,
+			LastHeartbeat: now.Add(-time.Hour),
+		},
+	}))
+	project := &v1.Project{
+		ObjectMeta: v1.ObjectMeta{Name: projectName},
+		Status: v1.ProjectStatus{
+			Phase:                v1.ProjectPhaseTerminating,
+			NodeRef:              nodeName,
+			AssignmentGeneration: 1,
+			Conditions: []v1.Condition{{
+				Type:               v1.ConditionTypeTerminatingAt,
+				Status:             v1.ConditionTrue,
+				Reason:             "NodeNotReady",
+				LastTransitionTime: now.Add(-time.Minute),
+			}},
+		},
+	}
+	require.NoError(t, s.CreateProject(ctx, project))
+
+	workDir := t.TempDir()
+	configPath := filepath.Join(workDir, "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("{}\n"), 0600))
+	logPath := filepath.Join(workDir, "server.log")
+	output, err := os.Create(logPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = output.Close() })
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.Command(executable, "-test.run=^TestServerUsesTerminatingTimeout$")
+	cmd.Dir = workDir // Isolate the server from repository .env/config files.
+	cmd.Env = []string{
+		"CARA_AI_TERMINATION_CHILD=1",
+		"CARA_CONFIG=" + configPath,
+		"DATABASE_URL=" + databaseURL,
+		"DEBUG=true",
+		"HOST=127.0.0.1",
+		"PORT=0",
+		"TERMINATING_TIMEOUT=1s",
+		"RUNNING_GRACE_PERIOD=24h",
+	}
+	cmd.Stdout, cmd.Stderr = output, output
+	require.NoError(t, cmd.Start())
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+			t.Error("server did not shut down after SIGTERM")
+		}
+		if t.Failed() {
+			logs, err := os.ReadFile(logPath)
+			if err == nil {
+				t.Logf("server output:\n%s", logs)
+			}
+		}
+	})
+
+	// The existing clock is well past the configured termination timeout,
+	// but well inside both the default timeout and the running grace period.
+	// Only process startup/reconciliation is awaited; no timeout must elapse.
+	require.Eventually(t, func() bool {
+		got, err := s.GetProject(ctx, projectName)
+		if err != nil {
+			return false
+		}
+		for _, condition := range got.Status.Conditions {
+			if condition.Type == v1.ConditionTypeTerminationBlocked && condition.Status == v1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 20*time.Millisecond,
+		"the server must use TERMINATING_TIMEOUT independently of RUNNING_GRACE_PERIOD")
+
+	got, err := s.GetProject(ctx, projectName)
+	require.NoError(t, err)
+	require.Equal(t, v1.ProjectPhaseTerminating, got.Status.Phase)
+	require.Equal(t, project.UID, got.UID)
+	require.Equal(t, nodeName, got.Status.NodeRef)
+	require.Equal(t, int64(1), got.Status.AssignmentGeneration)
+}
